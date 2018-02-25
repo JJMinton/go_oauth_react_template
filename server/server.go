@@ -123,19 +123,27 @@ func protectedPageHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 //Google login
+var state string
 func googleLoginHandler(res http.ResponseWriter, req *http.Request) {
-    const state = "123352lkkjdgdsu"//this should be randomly generated
-    //var values = make(url.Values)
+    state = alphaNum(32)
     http.Redirect(res, req, googleConf.AuthCodeURL(state), http.StatusSeeOther)
 }
 
 func googleCallbackHandler(w http.ResponseWriter, req *http.Request) {
+    //Check state
+    if state != req.FormValue("state") {
+        log.Fatal("Response state doesn't match set state: auth forgery attack?!")
+    }
+
+    //Retrieve access token
     authcode := req.FormValue("code")
     tok, err := googleConf.Exchange(oauth2.NoContext, authcode)
     if err != nil {
         log.Fatal("err is ", err)
     }
     log.Print(string(tok.AccessToken))
+
+    //Retrieve google info
     response, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + tok.AccessToken)
     defer response.Body.Close()
     contents, err := ioutil.ReadAll(response.Body)
