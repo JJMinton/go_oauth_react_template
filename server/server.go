@@ -23,7 +23,7 @@ type Config struct {
     Port            string `json:"port"`
     CookieHashKey   []byte `json:"cookieHashKey"`
     CookieBlockKey  []byte `json:"cookieBlockKey"`
-    CookieName      string `json:"cookieName"`
+    LoginCookieName      string `json:"loginCookieName"`
 }
 var config Config
 
@@ -69,11 +69,15 @@ func init() {
 
 //Router
 func main() {
-    http.HandleFunc("/", rootHandler)
+    http.HandleFunc("/root", rootHandler)
+    http.Handle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir("./react/dist/public"))))
+    http.Handle("/private/", authenticateHandler(
+        http.StripPrefix("/private/", http.FileServer(http.Dir("./react/dist/private"))),
+        http.HandlerFunc(failedLoginHandler)))
     http.HandleFunc("/auth/google/login", googleLoginHandler)
     http.HandleFunc(googleCred.Callback, googleCallbackHandler)
     http.HandleFunc("/logout", logoutHandler)
-    http.HandleFunc("/protectedpage", authenticatePage(protectedPageHandler))
+    http.HandleFunc("/protectedpage", authenticateFunc(protectedPageHandler, failedLoginHandler))
     http.ListenAndServe(config.Port, nil)
 }
 
@@ -180,57 +184,6 @@ func logout(res http.ResponseWriter, req *http.Request) {
     err := SetCookie(res, req, map[string]string{"loggedin": "false",})
     if err != nil {
         log.Fatal("Failed to save cookie")
-    }
-}
-
-//Authentication/page protection middleware
-func authenticatePage(f http.HandlerFunc) http.HandlerFunc {
-    return func(res http.ResponseWriter, req *http.Request) {
-        log.Print("starting authentication")
-        loggedin, err := GetCookie(req, "loggedin")
-        if err != nil {
-            log.Fatal("Failed to open cookie")
-        }
-        if loggedin == "false" || loggedin == "" { //return error/login page
-            log.Print("authentication failed")
-            log.Print(loggedin)
-            failedLoginHandler(res, req)
-        } else { //return page
-            log.Print("authentication complete")
-            f(res, req)
-        }
-    }
-}
-
-//Cookie management
-func SetCookie(w http.ResponseWriter, r *http.Request, value map[string]string) error{
-    if encoded, err := store.Encode(config.CookieName, value); err == nil {
-        cookie := &http.Cookie{
-            Name: config.CookieName,
-            Value: encoded,
-            Path: "/",
-        }
-        http.SetCookie(w, cookie)
-        return nil
-    } else {
-        log.Print("Cookie write fail")
-        log.Print(err)
-        return err
-    }
-}
-
-func GetCookie(r *http.Request, key string) (string, error) {
-    if cookie, err := r.Cookie(config.CookieName); err == nil {
-        value := make(map[string]string)
-        if err = store.Decode(config.CookieName, cookie.Value, &value); err == nil {
-            return value[key], err
-        } else {
-            log.Print("failed to decode cookie")
-            return "", err
-        }
-    } else {
-        log.Print("failed to retrieve cookie")
-        return "", err
     }
 }
 
